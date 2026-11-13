@@ -1,0 +1,33 @@
+[package]
+name = "swarm-brain"
+version = "0.1.0"
+edition = "2021"
+
+# One drone's decision-making, shared verbatim by the PC simulator (backend/) and the STM32
+# firmware (firmware/). no_std and allocation-free so it runs on the board unchanged.
+
+[features]
+# mavlink-core needs exactly one I/O flavor to compile: std (PC) or embedded (board). The brain
+# itself uses neither; it just passes the choice through.
+std = ["mavlink-swarm/std"]
+embedded = ["mavlink-swarm/embedded"]
+# Lets the backend send Vec2 to the viewer as JSON; the firmware leaves it off.
+serde = ["dep:serde"]
+
+[dependencies]
+# MAVLink dialect without std: the brain only builds and matches messages, the transport
+# (UDP or UART) belongs to whoever runs it.
+mavlink-swarm = { path = "../mavlink-swarm", default-features = false, features = ["dialect-swarm"] }
+# Pure-Rust math (sqrtf) for no_std targets.
+libm = "0.2.16"
+# Ed25519 for signed sightings (see src/auth.rs). no_std; `fast` adds the precomputed basepoint
+# tables: signing 2.4 ms instead of 6 on the board, for ~38 KB of flash.
+ed25519-dalek = { version = "3.0.0", default-features = false, features = ["fast"] }
+# The launch base derives each mission's operator key from its own (see src/auth.rs). Already
+# in the tree through ed25519-dalek.
+sha2 = { version = "0.11.1", default-features = false }
+serde = { version = "1.0.229", default-features = false, features = ["derive"], optional = true }
+
+[dev-dependencies]
+# Unit tests run on the host, so they need the std flavor.
+mavlink-swarm = { path = "../mavlink-swarm", default-features = false, features = ["dialect-swarm", "std"] }

@@ -1,0 +1,29 @@
+[package]
+name = "mavlink-swarm"
+version = "0.1.0"
+edition = "2021"
+
+# Generated MAVLink bindings for the swarm's custom dialect (dialect/swarm.xml, which pulls in
+# MAVLink `common`). Shared by the PC-side simulator and, later, the STM32 firmware — hence the
+# std/embedded split mirroring the upstream `mavlink` crate's own features.
+
+[features]
+default = ["std", "dialect-swarm"]
+std = ["mavlink-core/std"]
+embedded = ["mavlink-core/embedded"]
+# Async serial/TCP connections (the backend's bridge to the board, or to the fake board).
+tokio = ["std", "mavlink-core/tokio", "mavlink-core/transport-direct-serial", "mavlink-core/transport-tcp"]
+# The generated mod.rs gates each dialect module behind a `dialect-<name>` feature.
+dialect-swarm = []
+
+[dependencies]
+# Pinned to exactly the version mavlink-bindgen generates code for — the generated code calls
+# into mavlink-core's internals, so the two must match.
+mavlink-core = { version = "=0.19.1", default-features = false }
+# Used by the generated code for MAVLink enums and bitmask fields.
+bitflags = { version = "2.9.1", default-features = false }
+num-derive = "0.5"
+num-traits = { version = "0.2", default-features = false }
+
+[build-dependencies]
+mavlink-bindgen = { version = "=0.19.1", default-features = false }

@@ -1,0 +1,21 @@
+[package]
+name = "swarm-gcs"
+version = "0.1.0"
+edition = "2021"
+
+# The operator's ground control station: sees the swarm only through what drones report over
+# MAVLink, commands individual drones, cancels targets, and launches drones from the base.
+
+[dependencies]
+# UI: a Bevy window with everything drawn in egui (map included).
+bevy.workspace = true
+bevy_egui.workspace = true
+
+# Radio and base links: MAVLink v2 over UDP, on a background tokio thread.
+tokio = { workspace = true, features = ["rt", "net", "time", "sync", "macros"] }
+mavlink-swarm = { path = "../mavlink-swarm" }
+
+# Mission planning: how many drones a field needs, worked out the way the drones do it.
+swarm-brain = { path = "../brain", features = ["std"] }
+
+# Bevy is slow unoptimized: see the workspace's Cargo.toml for how it's built.

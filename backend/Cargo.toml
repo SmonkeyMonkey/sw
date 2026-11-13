@@ -1,0 +1,42 @@
+[package]
+name = "swarm-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# tokio: async runtime driving each drone as its own task, the network emulator, and the
+# WebSocket server.
+tokio = { workspace = true, features = ["full"] }
+
+# The swarm's MAVLink dialect (common + SWARM_* messages), shared with the future firmware.
+mavlink-swarm = { path = "../mavlink-swarm", features = ["tokio"] }
+# One drone's brain, the same crate the firmware runs.
+swarm-brain = { path = "../brain", features = ["std", "serde"] }
+
+# tokio-tungstenite / futures-util: WebSocket server so the viewer can connect and get live
+# swarm state, same pattern as the drone HIL project's backend.
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+
+# serde / serde_json: encode each broadcast frame as JSON for the viewer.
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json.workspace = true
+
+# rand: the simulated world's randomness (target wander, radio loss/jitter). Drone brains use
+# their own tiny PRNG instead so they stay portable to the board.
+rand = "0.10.3"
+
+# OpenTelemetry: traces of how a target sighting propagates hop by hop through the swarm, plus
+# metrics, exported over OTLP/HTTP to the collector in observability/docker-compose.yml. All
+# three crates must stay on the same version.
+opentelemetry = "0.33.1"
+opentelemetry_sdk = "0.33.1"
+opentelemetry-otlp = "0.33.1"
+
+# rapier3d: rigid-body physics for every drone's airframe (gravity, rotor forces, drag, and
+# drone-to-drone collisions). glam is its math library; depended on directly for Mat3/Quat
+# helpers, so it must stay on exactly the version rapier3d uses.
+rapier3d = "0.36.1"
+glam = "0.33.12"
+
+# Built optimized enough for physics in real time: see the workspace's Cargo.toml.

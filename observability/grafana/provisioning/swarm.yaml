@@ -1,0 +1,9 @@
+# Mounted into otel-lgtm next to its built-in dashboard providers (see docker-compose.yml).
+apiVersion: 1
+
+providers:
+  - name: "Swarm"
+    type: file
+    options:
+      path: /otel-lgtm/swarm-dashboards
+      foldersFromFilesStructure: false

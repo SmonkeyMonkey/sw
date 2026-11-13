@@ -1,0 +1,219 @@
+<?xml version="1.0"?>
+<!--
+  Swarm search-and-converge dialect. Extends MAVLink `common` (which brings in HEARTBEAT,
+  LOCAL_POSITION_NED, etc.) with the messages the swarm needs that have no standard
+  equivalent. IDs 44000+ are unused by every dialect shipped with rust-mavlink 0.19.1
+  (ICAROUS occupies 42000+); a real deployment would register a range with the MAVLink
+  maintainers instead of just picking an unused one.
+-->
+<mavlink>
+  <include>common.xml</include>
+  <enums>
+    <enum name="MAV_CMD">
+      <entry value="44100" name="MAV_CMD_SWARM_CANCEL_TARGET" hasLocation="false" isDestination="false">
+        <description>Operator: stop responding to this target (it's been dealt with, or isn't interesting). Sent to all drones (target_system 0) and spread through the swarm; the target stays known as cancelled, so seeing it again doesn't draw drones back to it.</description>
+        <param index="1" label="Target ID" minValue="1" maxValue="65535" increment="1">Swarm-wide target ID (as in SWARM_TARGET_SIGHTING.target_id).</param>
+      </entry>
+      <entry value="44102" name="MAV_CMD_SWARM_SET_RESPONDERS" hasLocation="false" isDestination="false">
+        <description>Operator: how many drones should respond to each target (hold a ring around it, or check it out). Sent to all drones (target_system 0) and spread through the swarm; repeated now and then so drones joining later pick it up too.</description>
+        <param index="1" label="Responders" minValue="1" maxValue="8" increment="1">Drones per target.</param>
+      </entry>
+      <entry value="44104" name="MAV_CMD_SWARM_SET_MODE" hasLocation="false" isDestination="false">
+        <description>Operator: how the swarm works. Sent to all drones (target_system 0) and spread through the swarm; repeated now and then so drones joining later pick it up too.</description>
+        <param index="1" label="Mode" minValue="0" maxValue="1" increment="1">0: autonomous (off the leash, sweeping the field in formation: the quickest search; in contact with the base only near it). 1: connected (always in contact with the base by relay chains, sweeping in rays out from it: slower).</param>
+      </entry>
+      <entry value="44103" name="MAV_CMD_SWARM_SET_FIELD" hasLocation="false" isDestination="false">
+        <description>Operator to the launch base: the field to search, a rectangle with the base in its lower left corner. Starts a new mission on it (drones are told the field as they launch).</description>
+        <param index="1" label="Width" units="m" minValue="10" maxValue="600">East-west size.</param>
+        <param index="2" label="Height" units="m" minValue="10" maxValue="600">North-south size.</param>
+        <param index="3" label="Launch" minValue="0" increment="1">Drones to launch on it (NaN: as many as the base starts a mission with).</param>
+      </entry>
+      <entry value="44101" name="MAV_CMD_SWARM_LAUNCH" hasLocation="false" isDestination="false">
+        <description>Operator to the launch base: launch this many more drones, one after another.</description>
+        <param index="1" label="Count" minValue="1" maxValue="160" increment="1">Drones to launch.</param>
+      </entry>
+      <entry value="44105" name="MAV_CMD_SWARM_REVOKE" hasLocation="false" isDestination="false">
+        <description>Operator to the launch base: this drone is no longer trusted (captured, or behaving like it). The base revokes its key for the rest of the mission (SWARM_REVOKE): the swarm stops listening to it, and the drone itself is told to come home.</description>
+        <param index="1" label="System ID" minValue="1" maxValue="254" increment="1">The drone to revoke.</param>
+      </entry>
+      <entry value="44106" name="MAV_CMD_SWARM_SET_SPARES" hasLocation="false" isDestination="false">
+        <description>Operator to the launch base: keep this many spare airframes on its pads, charging, to take over from drones that come back to charge (see MAV_CMD_SWARM_SET_ROTATION). Answered in SWARM_BASE_STATUS.</description>
+        <param index="1" label="Spares" minValue="0" maxValue="64" increment="1">Spare airframes on the pads.</param>
+      </entry>
+      <entry value="44107" name="MAV_CMD_SWARM_SET_ROTATION" hasLocation="false" isDestination="false">
+        <description>Operator to the launch base: whether a charged airframe on its pads takes off in the place of each drone that comes back to charge, flying as it, so as many stay in the air as were launched. A drone the operator sends home isn't replaced.</description>
+        <param index="1" label="Rotation" minValue="0" maxValue="1" increment="1">1: on, 0: off.</param>
+      </entry>
+    </enum>
+  </enums>
+  <messages>
+    <message id="44000" name="SWARM_TARGET_SIGHTING">
+      <description>A firsthand or relayed observation of the search target. Relayed copies keep the original observer and carry how old the observation is, so receivers can always keep the freshest observation no matter how many hops it took. Age rather than a timestamp, because drones' clocks aren't synchronized: each relay adds the time it held the observation plus an estimate of the radio hop. Also carries the target's estimated velocity, so a receiver can predict where it is by now, and W3C trace context, so the path this news takes through the swarm can be reconstructed as one distributed trace.</description>
+      <field type="uint16_t" name="target_id">Swarm-wide target ID: sysid of the first drone that saw it (high byte) and that drone's own counter (low byte). Duplicate tracks of one target merge into the lowest ID.</field>
+      <field type="uint32_t" name="age_ms" units="ms">How long ago the original observer saw the target, as of sending this message.</field>
+      <field type="float" name="x" units="m">Target X in the local field frame, where it was observed.</field>
+      <field type="float" name="y" units="m">Target Y in the local field frame, where it was observed.</field>
+      <field type="float" name="vx" units="m/s">Target velocity X, as estimated by the original observer (0 if unknown).</field>
+      <field type="float" name="vy" units="m/s">Target velocity Y.</field>
+      <field type="uint8_t" name="observer_sysid">MAVLink system ID of the drone that saw the target firsthand.</field>
+      <field type="uint8_t" name="cancelled">1 if the operator cancelled this target: drones keep track of it but don't respond to it.</field>
+      <field type="uint8_t" name="responders">Drones the original observer knows are responding to this target, itself included. Travels with the observation, so a drone too far away to hear the target's responders still learns that the target already has enough of them.</field>
+      <field type="uint8_t" name="hops">Radio hops from the original observer to the sender of this message (0 = the sender saw it firsthand).</field>
+      <field type="uint8_t[16]" name="trace_id">W3C trace ID shared by every hop of this sighting's propagation. All zeros if tracing is off.</field>
+      <field type="uint8_t[8]" name="parent_span_id">The sender's own span ID within that trace; a receiver that adopts the sighting records its span as a child of this one.</field>
+      <field type="uint32_t" name="observed_ms" units="ms">When the original observer saw the target, on its own clock. Unlike age_ms it never changes on the way, so it can be signed: receivers use it only to order one observer's observations, never against their own clocks.</field>
+      <field type="uint8_t[64]" name="signature">The original observer's Ed25519 signature over the mission, observer_sysid, observed_ms, x, y, vx and vy (see brain/src/auth.rs), checked against the observer's SWARM_KEY_CERT. The rest is the relays' to update and isn't vouched for.</field>
+    </message>
+    <message id="44006" name="SWARM_KEY_CERT">
+      <description>A drone's public key, certified by the launch base for this mission. Sent along with sightings by their observer and by whoever relays them, now and then, so anyone who gets a sighting can check its signature.</description>
+      <field type="uint32_t" name="mission">The mission it's valid for.</field>
+      <field type="uint8_t" name="sysid">The drone whose key this is.</field>
+      <field type="uint8_t[32]" name="public_key">Its Ed25519 public key.</field>
+      <field type="uint8_t[64]" name="signature">The launch base's Ed25519 signature over the mission, sysid and public_key.</field>
+    </message>
+    <message id="44008" name="SWARM_SIGNED_COMMAND">
+      <description>A COMMAND_LONG from the operator, signed with the mission's operator key (see brain/src/auth.rs). Drones take orders in this form only: a plain COMMAND_LONG over the radio could come from anyone, a captured drone included, since the radio header isn't vouched for. Relays pass it on unchanged once they've checked it.</description>
+      <field type="uint32_t" name="mission">The mission it's for.</field>
+      <field type="uint32_t" name="issued_ms" units="ms">When the operator gave it, on the mission clock (ms since mission start). A drone takes only one newer than the last it took for the same drone, and only while fresh: a recorded order can't be played back later.</field>
+      <field type="float" name="param1">As COMMAND_LONG.</field>
+      <field type="float" name="param2">As COMMAND_LONG.</field>
+      <field type="float" name="param3">As COMMAND_LONG.</field>
+      <field type="float" name="param4">As COMMAND_LONG.</field>
+      <field type="float" name="param5">As COMMAND_LONG.</field>
+      <field type="float" name="param6">As COMMAND_LONG.</field>
+      <field type="float" name="param7">As COMMAND_LONG.</field>
+      <field type="uint16_t" name="command" enum="MAV_CMD">As COMMAND_LONG.</field>
+      <field type="uint8_t" name="target_system">As COMMAND_LONG (0: the whole swarm, for the commands that allow it).</field>
+      <field type="uint8_t[64]" name="signature">The operator's Ed25519 signature over the mission, issued_ms, target_system, command and params.</field>
+    </message>
+    <message id="44009" name="SWARM_SIGNED_STICKS">
+      <description>MANUAL_CONTROL from the operator, signed like SWARM_SIGNED_COMMAND: flying a drone by hand is as much an order as any.</description>
+      <field type="uint32_t" name="mission">The mission it's for.</field>
+      <field type="uint32_t" name="issued_ms" units="ms">As SWARM_SIGNED_COMMAND. Also what orders stick input: only newer than the last counts.</field>
+      <field type="int16_t" name="x">As MANUAL_CONTROL.</field>
+      <field type="int16_t" name="y">As MANUAL_CONTROL.</field>
+      <field type="int16_t" name="z">As MANUAL_CONTROL.</field>
+      <field type="int16_t" name="r">As MANUAL_CONTROL.</field>
+      <field type="uint8_t" name="target">As MANUAL_CONTROL.</field>
+      <field type="uint8_t[64]" name="signature">The operator's Ed25519 signature over the mission, issued_ms, target and the axes.</field>
+    </message>
+    <message id="44010" name="SWARM_REVOKE">
+      <description>The launch base revokes a drone's key for the rest of the mission (MAV_CMD_SWARM_REVOKE): its sightings, statuses and beacons are no longer listened to, and the drone itself comes home. Repeated by the base every second and relayed by the swarm.</description>
+      <field type="uint32_t" name="mission">The mission it's for.</field>
+      <field type="uint8_t" name="sysid">The drone revoked.</field>
+      <field type="uint8_t[64]" name="signature">The launch base's Ed25519 signature over the mission and sysid.</field>
+    </message>
+    <message id="44011" name="SWARM_OPERATOR_KEY">
+      <description>Launch base to the ground station, over their wire only (never the radio): the mission's operator key, which the drones were told the public half of at launch, and the mission clock. Sent in answer to the ground station's heartbeat, so a new mission's key reaches it within a second.</description>
+      <field type="uint32_t" name="mission">The mission.</field>
+      <field type="uint32_t" name="mission_ms" units="ms">The mission clock as this is sent.</field>
+      <field type="uint8_t[32]" name="secret_key">The operator's Ed25519 secret key for this mission.</field>
+      <field type="uint8_t[32]" name="link_key">The mission's radio link key (MAVLink 2 message signing): the ground station's radio frames are signed with it, and only frames signed with it are listened to.</field>
+    </message>
+    <message id="44012" name="SWARM_BASE_STATUS">
+      <description>Launch base to the ground station, over their wire only, with each SWARM_OPERATOR_KEY: what's on its pads, and how it's set.</description>
+      <field type="uint8_t" name="parked">Airframes on the pads, charging or charged.</field>
+      <field type="uint8_t" name="ready">Of those, charged enough to take off.</field>
+      <field type="uint8_t" name="waiting">Drones down to charge with no charged airframe to take over from them yet.</field>
+      <field type="uint8_t" name="spares">Spare airframes it's been asked to keep (MAV_CMD_SWARM_SET_SPARES).</field>
+      <field type="uint8_t" name="rotation">1 if charged airframes take over from drones down to charge (MAV_CMD_SWARM_SET_ROTATION).</field>
+      <field type="uint8_t" name="batteries">1 if the drones' batteries run down (in the simulator: --battery-min).</field>
+      <field type="uint8_t" name="lowest_charge" units="%">The lowest charge of a drone in the air, 0-100 (255: not known).</field>
+    </message>
+
+    <!--
+      Hardware-in-the-loop link between the simulator and a drone brain running on real hardware
+      (the STM32 board over UART). These never go over the swarm radio: they stand in for the
+      wiring between one drone's autopilot and its own sensors and motors, plus a side channel
+      to the simulator's telemetry. Everything else on the same serial link is ordinary radio
+      traffic (HEARTBEAT, LOCAL_POSITION_NED, SWARM_TARGET_SIGHTING) relayed to and from the
+      emulated radio.
+    -->
+    <message id="44001" name="SWARM_HIL_SENSOR">
+      <description>Simulator to brain: this tick's own-sensor reading. Each one starts one brain tick. Also tells the brain which system ID it is flying as, so the firmware needs no per-drone configuration.</description>
+      <field type="uint32_t" name="time_ms" units="ms">Swarm clock (ms since swarm start).</field>
+      <field type="float" name="x" units="m">GPS fix X in the local field frame (valid if gps_fix).</field>
+      <field type="float" name="y" units="m">GPS fix Y in the local field frame.</field>
+      <field type="uint8_t" name="gps_fix">1 if the GPS has a fix.</field>
+      <field type="float" name="vx" units="m/s">Own ground velocity X, from the drone's own sensors (no GPS needed).</field>
+      <field type="float" name="vy" units="m/s">Own ground velocity Y.</field>
+      <field type="float[4]" name="target_x" units="m">X of each target within sensor range, relative to the drone; the first target_count entries are valid.</field>
+      <field type="float[4]" name="target_y" units="m">Y of each target, relative to the drone.</field>
+      <field type="uint8_t" name="target_count">Targets within sensor range this tick (at most 4).</field>
+      <field type="uint8_t[6]" name="nearby_sysid">System ID of each drone the proximity sensing picks up.</field>
+      <field type="float[6]" name="nearby_x" units="m">Other drones the proximity sensing picks up: X relative to this drone. The first nearby_count entries are valid.</field>
+      <field type="float[6]" name="nearby_y" units="m">...Y relative to this drone.</field>
+      <field type="float[6]" name="nearby_vx" units="m/s">...velocity X relative to this drone.</field>
+      <field type="float[6]" name="nearby_vy" units="m/s">...velocity Y relative to this drone.</field>
+      <field type="uint8_t" name="nearby_count">How many of the nearby_* entries are valid (at most 6).</field>
+      <field type="uint8_t" name="has_proximity">1 if the drone has proximity sensing (then nearby_* is what it sees, possibly nothing); 0 if not.</field>
+      <field type="uint8_t" name="sysid">MAVLink system ID this brain flies as.</field>
+      <field type="float" name="battery">The battery's state of charge, 0 (empty) to 1 (full); NaN if the drone doesn't know it.</field>
+    </message>
+    <message id="44002" name="SWARM_HIL_COMMAND">
+      <description>Brain to simulator: the velocity command for the tick started by the SWARM_HIL_SENSOR with the same time_ms, plus brain state the simulator only uses for display and telemetry.</description>
+      <field type="uint32_t" name="time_ms" units="ms">time_ms of the sensor reading this answers.</field>
+      <field type="float" name="vx" units="m/s">Commanded velocity X.</field>
+      <field type="float" name="vy" units="m/s">Commanded velocity Y.</field>
+      <field type="uint8_t" name="mode">0 = searching, 1 = investigating, 2 = converging, 3 = following an operator order.</field>
+      <field type="uint8_t" name="informed">1 if the brain holds any sighting.</field>
+      <field type="uint8_t" name="isolated">1 if the brain has heard no other drone recently.</field>
+      <field type="uint16_t" name="target_id">Target the brain is responding to (0 = none, just searching).</field>
+      <field type="uint8_t" name="refuted_sysid">Observer whose report the brain just refuted in person (0 = none).</field>
+      <field type="float" name="est_x" units="m">Where the brain thinks the drone is, X.</field>
+      <field type="float" name="est_y" units="m">...Y.</field>
+      <field type="uint8_t" name="nav">As in SWARM_DRONE_STATUS.nav.</field>
+      <field type="uint8_t" name="land">1 once the brain wants the airframe to land (it's back at base after a return-to-launch); 2 if it's to charge (it went home low on charge, on its own).</field>
+      <field type="uint8_t[4]" name="lost_sysid">Neighbors just declared lost this tick (0 = unused slot).</field>
+      <field type="uint32_t[4]" name="lost_silent_ms" units="ms">How long each lost neighbor had been silent.</field>
+    </message>
+    <message id="44003" name="SWARM_HIL_TRACE_EVENT">
+      <description>Brain to simulator: something worth a tracing span happened this tick. The brain waits for the matching SWARM_HIL_TRACE_SPAN before sending its radio traffic, so its broadcasts carry the new span as their parent.</description>
+      <field type="uint32_t" name="age_ms" units="ms">Adopted only: age of the sighting when adopted.</field>
+      <field type="uint8_t" name="kind">1 = spotted the target firsthand, 2 = adopted a relayed sighting.</field>
+      <field type="uint8_t" name="observer_sysid">Adopted only: original observer.</field>
+      <field type="uint8_t" name="hops">Adopted only: hops from the original observer.</field>
+      <field type="uint8_t[16]" name="trace_id">Adopted only: trace the sighting belongs to.</field>
+      <field type="uint8_t[8]" name="parent_span_id">Adopted only: the relaying drone's span.</field>
+    </message>
+    <message id="44004" name="SWARM_HIL_TRACE_SPAN">
+      <description>Simulator to brain: the span recorded for the last SWARM_HIL_TRACE_EVENT.</description>
+      <field type="uint8_t[16]" name="trace_id">Trace ID to carry in outgoing sightings.</field>
+      <field type="uint8_t[8]" name="span_id">Span ID to carry as parent_span_id.</field>
+    </message>
+    <message id="44007" name="SWARM_HIL_MISSION">
+      <description>Simulator to brain: everything the launch base tells a drone before it takes off. Its keys for this mission (see brain/src/auth.rs) and the mission itself: the field, where the base is, how the swarm works. Repeated every second, so a board that restarts gets it again; a different one means a new mission, and a fresh brain.</description>
+      <field type="uint32_t" name="mission">Mission number.</field>
+      <field type="uint8_t" name="sysid">MAVLink system ID the drone flies as.</field>
+      <field type="uint8_t[32]" name="secret_key">The drone's Ed25519 secret key.</field>
+      <field type="uint8_t[64]" name="certificate">The launch base's signature on the drone's public key (SWARM_KEY_CERT.signature).</field>
+      <field type="uint8_t[32]" name="authority_key">The launch base's public key.</field>
+      <field type="uint8_t[32]" name="operator_key">The mission's operator public key: orders signed with it are the ground station's (SWARM_SIGNED_COMMAND).</field>
+      <field type="uint8_t[32]" name="link_key">The mission's radio link key: every frame on the air is signed with it (MAVLink 2 message signing, see brain/src/radio.rs).</field>
+      <field type="float" name="field_half_x" units="m">Half the field's east-west size: it spans -field_half_x..field_half_x.</field>
+      <field type="float" name="field_half_y" units="m">Half its north-south size.</field>
+      <field type="float" name="home_x" units="m">Where the launch base is, X.</field>
+      <field type="float" name="home_y" units="m">Where the launch base is, Y.</field>
+      <field type="uint8_t" name="swarm_mode">0 = autonomous, 1 = connected (as MAV_CMD_SWARM_SET_MODE).</field>
+      <field type="uint8_t" name="search">How free drones search: 0 = shared coverage map, 1 = random walk.</field>
+      <field type="uint16_t" name="fleet">Drones the base launches on this mission (0 = not known): the formation's stretches go by it.</field>
+    </message>
+    <message id="44005" name="SWARM_DRONE_STATUS">
+      <description>One drone's state, for the operator's ground station. Each drone broadcasts its own once a second; others relay it, up to a hop limit and only if it's newer than the last one relayed, so the ground station sees the whole swarm even though its radio reaches only the drones near the base.</description>
+      <field type="uint8_t" name="sysid">The drone this is about (not necessarily the sender: it may be relayed).</field>
+      <field type="uint8_t" name="seq">Increments with each status the drone issues; relays forward only statuses newer than the last one they relayed.</field>
+      <field type="uint8_t" name="hops">Radio hops so far.</field>
+      <field type="uint32_t" name="age_ms" units="ms">How old the status is, as of sending (each relay adds its holding time).</field>
+      <field type="float" name="x" units="m">Position X in the local field frame.</field>
+      <field type="float" name="y" units="m">Position Y in the local field frame.</field>
+      <field type="uint8_t" name="mode">As in SWARM_HIL_COMMAND.mode.</field>
+      <field type="uint16_t" name="target_id">Target it's responding to (0 = none).</field>
+      <field type="uint8_t" name="order">Operator order it's following: 0 = none (autonomous), 1 = go to, 2 = hold, 3 = return to launch, 4 = manual control (sticks), 5 = manual control with the sticks' signal lost (hovering).</field>
+      <field type="uint16_t" name="ack_command">Last operator command it handled (MAV_CMD), 0 if none. The ground station's acknowledgement: COMMAND_ACK can't name its sender once relayed, a status can.</field>
+      <field type="uint8_t" name="ack_result">MAV_RESULT for ack_command.</field>
+      <field type="uint8_t" name="nav">Where its position comes from: 0 = GPS, 1 = neighbors it ranges (no usable GPS), 2 = dead reckoning.</field>
+      <field type="uint8_t" name="pos_accuracy_dm" units="dm">How sure it is of its position (x, y above).</field>
+      <field type="uint8_t" name="fleet">The highest system ID the drone knows of in the swarm (0 = not known), its own included: how many drones have been launched. Each drone passes on the highest it has heard, so the number reaches the whole swarm however many hops it is across, and every drone works out the same fronts for the sweep.</field>
+    </message>
+  </messages>
+</mavlink>

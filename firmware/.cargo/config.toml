@@ -1,0 +1,15 @@
+[build]
+target = "thumbv7em-none-eabihf"
+
+[target.thumbv7em-none-eabihf]
+runner = "probe-rs run --chip STM32F767ZITx"
+rustflags = [
+  "-C", "link-arg=-Tlink.x",
+  "-C", "link-arg=-Tdefmt.x",
+  "-C", "link-arg=--nmagic",
+]
+
+# One level for every build (cargo has no per-profile env): info, so the HAL's debug chatter
+# stays out of the RTT buffer. `DEFMT_LOG=debug cargo run` for more.
+[env]
+DEFMT_LOG = { value = "info", force = false }

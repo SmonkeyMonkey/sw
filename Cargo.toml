@@ -1,0 +1,26 @@
+# Everything that runs on the PC, built together: one target directory, one lock file, and one
+# version of each dependency they share. The firmware is left out: it builds for the board
+# (thumbv7em, see firmware/.cargo/config.toml), with its own profiles and lock file.
+[workspace]
+members = ["brain", "mavlink-swarm", "backend", "gcs", "viz"]
+exclude = ["firmware"]
+# Edition 2021's: features of dev-dependencies and build-dependencies stay out of normal builds
+# (a virtual manifest would default to the old resolver).
+resolver = "2"
+
+[workspace.dependencies]
+# Shared by the backend, the viewer and the ground station: on one version each.
+tokio = "1.54.0"
+tokio-tungstenite = "0.30.0"
+futures-util = "0.3.34"
+serde_json = "1.0.151"
+bevy = "0.20.0"
+bevy_egui = "0.43.1"
+
+# Physics (backend) and Bevy (viewer, ground station) are slow unoptimized: optimize the
+# dependencies fully and our own code a little, so `cargo run` is smooth and still quick to
+# rebuild. (In the backend, 27 drones took 2.5 cores unoptimized, starving the viewer.)
+[profile.dev]
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3

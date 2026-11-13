@@ -1,0 +1,19 @@
+# Observability stack for the swarm simulator: grafana/otel-lgtm bundles an OpenTelemetry
+# Collector, Prometheus (metrics), Tempo (traces), Loki (logs) and Grafana in one container,
+# pre-wired together — enough for local development without running five separate services.
+#
+#   docker compose -f observability/docker-compose.yml up -d
+#   Grafana:  http://localhost:3000  (admin / admin)
+#
+# The simulator exports OTLP/HTTP to localhost:4318 by default.
+services:
+  lgtm:
+    image: grafana/otel-lgtm:latest
+    ports:
+      - "3000:3000" # Grafana
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    volumes:
+      # The "Swarm" dashboard, picked up by Grafana's file provisioning on startup.
+      - ./grafana/provisioning/swarm.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/swarm.yaml:ro
+      - ./grafana/dashboards:/otel-lgtm/swarm-dashboards:ro

@@ -1,0 +1,15 @@
+# Build output: the workspace's target/ at the root, and the firmware's own in firmware/.
+target/
+
+# Output of `make run` and friends (scripts/up.sh).
+logs/
+
+# Claude Code's per-user permissions for this directory.
+.claude/settings.local.json
+
+# macOS Finder metadata.
+.DS_Store
+
+# Literature review notes and reports, kept out of the repo for now.
+research_notes/
+reports/

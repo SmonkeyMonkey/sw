@@ -1,0 +1,24 @@
+[package]
+name = "swarm-viz"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# bevy: 2D rendering only here (Camera2d, circular sprites) — much lighter use than the drone
+# project's 3D scene.
+bevy.workspace = true
+
+# bevy_egui: the "Faults" control panel (kill a drone) drawn over the field.
+bevy_egui.workspace = true
+
+# tokio-tungstenite / futures-util: WebSocket client, same bridge pattern as the drone
+# project's viz/src/ws_client.rs.
+tokio = { workspace = true, features = ["full"] }
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+
+# serde / serde_json: decode the JSON SwarmState messages the backend sends.
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json.workspace = true
+
+# Bevy is slow unoptimized: see the workspace's Cargo.toml for how it's built.

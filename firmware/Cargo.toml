@@ -1,0 +1,62 @@
+[package]
+name = "swarm-firmware"
+version = "0.1.0"
+edition = "2021"
+
+# The STM32 board as one drone of the swarm: runs the same `swarm-brain` the simulated drones
+# run, talking MAVLink v2 over the ST-Link's virtual COM port to the backend's HIL bridge
+# (backend/src/hil.rs).
+
+[dependencies]
+# Embassy: async HAL, executor and timers. The UART is interrupt-driven with ring buffers
+# (BufferedUart), since radio frames arrive whenever neighbors transmit, not on a fixed schedule.
+# `defmt` so the HAL's own warnings (UART overrun and framing errors) reach the log.
+embassy-stm32 = { version = "0.6.0", features = ["stm32f767zi", "single-bank", "time-driver-any", "memory-x", "unstable-pac", "exti", "defmt"] }
+embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread"] }
+embassy-time = { version = "0.5.1" }
+
+# Cortex-M core support: startup code, vector table, critical sections.
+cortex-m = { version = "0.7.9", features = ["critical-section-single-core"] }
+cortex-m-rt = "0.7.7"
+
+# Async channel between the UART reader task and the main loop.
+embassy-sync = "0.8.0"
+
+# Logging and panics over the debug probe (RTT), so the UART stays pure MAVLink. panic-probe
+# halts for the debugger in dev builds; release builds log the panic and reset instead (see
+# main.rs).
+defmt = "1.1.1"
+defmt-rtt = "1.3.0"
+panic-probe = { version = "1.0.0", features = ["print-defmt"] }
+
+# The swarm itself: the shared brain and the MAVLink dialect, both in their no_std/embedded
+# flavor (async reader/writer over embedded-io-async, which BufferedUart implements).
+swarm-brain = { path = "../brain", features = ["embedded"] }
+mavlink-swarm = { path = "../mavlink-swarm", default-features = false, features = ["dialect-swarm", "embedded"] }
+
+# Writing whole signed frames to the UART (BufferedUartTx implements it; the same version as
+# embassy-stm32's and mavlink-core's).
+embedded-io-async = "0.7.0"
+
+# Fixed-capacity collections and statics, instead of a heap.
+heapless = "0.9.3"
+static_cell = "2.1.1"
+
+[profile.release]
+debug = 2
+lto = true
+opt-level = "s"
+
+# Signatures are the hot path (see swarm-brain's auth.rs): built for speed while the rest is
+# built for size. Measured on this board at 216 MHz: verify 6.1 ms and sign 2.4 ms, against 6.5
+# and 6.1 at "s" (and without dalek's `fast` tables).
+[profile.release.package.curve25519-dalek]
+opt-level = 3
+[profile.release.package.ed25519-dalek]
+opt-level = 3
+[profile.release.package.sha2]
+opt-level = 3
+
+[profile.dev]
+debug = 2
+opt-level = 1
